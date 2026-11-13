@@ -1,10 +1,14 @@
 {
   "name": "atividade-desenvolvimento-web-3",
-  "version": "1.0.0",
-  "description": "Atividade de Desenvolvimento Web 3 - API com Node.js e arrays em memória",
+  "version": "1.1.0",
+  "description": "API Node.js com persistência de dados usando SQLite",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   }
 }

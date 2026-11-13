@@ -1,14 +1,13 @@
-import http from "http";
+import http from "node:http";
+import "./database.js";
 import { json } from "./middlewares/json.js";
 import { manipuladorDeRotas } from "./routes.js";
 
 const server = http.createServer(async (request, response) => {
   const resultado = await json(request, response);
+  if (!resultado) return;
 
-  if (!resultado) {
-    return;
-  }
-  manipuladorDeRotas(request, response);
+  await manipuladorDeRotas(request, response);
 });
 
 server.listen(3333, () => {

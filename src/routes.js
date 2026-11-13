@@ -1,94 +1,141 @@
 import { randomUUID } from "crypto";
+import { db } from "./database.js";
 
+// Banco de dados em memória para as demais entidades
 const produtos = [];
-const clientes = [];
 const categorias = [];
 const fornecedores = [];
 
-export const manipuladorDeRotas = (request, response) => {
+export const manipuladorDeRotas = async (request, response) => {
   const { method, url, body } = request;
 
+  // 1. READ (Listar todos os clientes)
   if (url === "/clientes" && method === "GET") {
-    response.writeHead(200);
-    return response.end(JSON.stringify(clientes));
+    try {
+      const clientes = await db.all("SELECT * FROM clientes");
+
+      response.writeHead(200);
+      return response.end(JSON.stringify(clientes));
+    } catch (erro) {
+      console.error(erro);
+      response.writeHead(500);
+      return response.end(
+        JSON.stringify({ erro: "Erro ao buscar os clientes." }),
+      );
+    }
   }
 
+  // 2. CREATE (Cadastrar um novo cliente)
   if (url === "/clientes" && method === "POST") {
     const { nome, email, telefone, ativo } = body || {};
 
-    const emailExiste = clientes.some((cliente) => cliente.email === email);
+    try {
+      const clienteExistente = await db.get(
+        "SELECT * FROM clientes WHERE email = ?",
+        [email],
+      );
 
-    if (emailExiste) {
-      response.writeHead(409);
+      if (clienteExistente) {
+        response.writeHead(409);
+        return response.end(
+          JSON.stringify({ erro: "Já existe um cliente com esse email." }),
+        );
+      }
+
+      const id = randomUUID();
+
+      await db.run(
+        "INSERT INTO clientes (id, nome, email, telefone, ativo) VALUES (?, ?, ?, ?, ?)",
+        [id, nome, email, telefone, ativo ? 1 : 0],
+      );
+
+      const novoCliente = { id, nome, email, telefone, ativo };
+
+      response.writeHead(201);
       return response.end(
-        JSON.stringify({ erro: "Já existe um cliente com esse email." }),
+        JSON.stringify({
+          mensagem: "Cliente cadastrado com sucesso!",
+          cliente: novoCliente,
+        }),
+      );
+    } catch (erro) {
+      console.error(erro);
+      response.writeHead(500);
+      return response.end(
+        JSON.stringify({ erro: "Erro ao salvar o cliente no banco de dados." }),
       );
     }
-
-    const novoCliente = {
-      id: randomUUID(),
-      nome,
-      email,
-      telefone,
-      ativo,
-    };
-
-    clientes.push(novoCliente);
-
-    response.writeHead(201);
-    return response.end(
-      JSON.stringify({
-        mensagem: "Cliente cadastrado com sucesso!",
-        cliente: novoCliente,
-      }),
-    );
   }
 
+  // LÓGICA PARA ROTAS DE CLIENTES COM ID
   const isRotaClienteComId =
     url.startsWith("/clientes/") && url.split("/").length === 3;
 
   if (isRotaClienteComId) {
     const id = url.split("/")[2];
-    const indexCliente = clientes.findIndex((cliente) => cliente.id === id);
 
-    if (indexCliente === -1) {
-      response.writeHead(404);
-      return response.end(JSON.stringify({ erro: "Cliente não encontrado." }));
-    }
+    try {
+      const cliente = await db.get("SELECT * FROM clientes WHERE id = ?", [id]);
 
-    if (method === "PUT") {
-      const { nome, email, telefone, ativo } = body || {};
+      if (!cliente) {
+        response.writeHead(404);
+        return response.end(
+          JSON.stringify({ erro: "Cliente não encontrado." }),
+        );
+      }
 
-      clientes[indexCliente] = {
-        ...clientes[indexCliente],
-        nome: nome ?? clientes[indexCliente].nome,
-        email: email ?? clientes[indexCliente].email,
-        telefone: telefone ?? clientes[indexCliente].telefone,
-        ativo: ativo ?? clientes[indexCliente].ativo,
-      };
+      // UPDATE (Atualizar um cliente)
+      if (method === "PUT") {
+        const { nome, email, telefone, ativo } = body || {};
 
-      response.writeHead(200);
+        await db.run(
+          "UPDATE clientes SET nome = ?, email = ?, telefone = ?, ativo = ? WHERE id = ?",
+          [
+            nome ?? cliente.nome,
+            email ?? cliente.email,
+            telefone ?? cliente.telefone,
+            ativo === undefined ? cliente.ativo : ativo ? 1 : 0,
+            id,
+          ],
+        );
+
+        const clienteAtualizado = await db.get(
+          "SELECT * FROM clientes WHERE id = ?",
+          [id],
+        );
+
+        response.writeHead(200);
+        return response.end(
+          JSON.stringify({
+            mensagem: "Cliente atualizado com sucesso!",
+            cliente: clienteAtualizado,
+          }),
+        );
+      }
+
+      // DELETE (Deletar um cliente)
+      if (method === "DELETE") {
+        await db.run("DELETE FROM clientes WHERE id = ?", [id]);
+
+        response.writeHead(204);
+        return response.end();
+      }
+    } catch (erro) {
+      console.error(erro);
+      response.writeHead(500);
       return response.end(
-        JSON.stringify({
-          mensagem: "Cliente atualizado com sucesso!",
-          cliente: clientes[indexCliente],
-        }),
+        JSON.stringify({ erro: "Erro ao executar operação com o cliente." }),
       );
-    }
-
-    if (method === "DELETE") {
-      clientes.splice(indexCliente, 1);
-
-      response.writeHead(204);
-      return response.end();
     }
   }
 
+  // 3. READ (Listar todas as categorias)
   if (url === "/categorias" && method === "GET") {
     response.writeHead(200);
     return response.end(JSON.stringify(categorias));
   }
 
+  // 4. CREATE (Cadastrar uma nova categoria)
   if (url === "/categorias" && method === "POST") {
     const { nome, descricao } = body || {};
 
@@ -109,6 +156,7 @@ export const manipuladorDeRotas = (request, response) => {
     );
   }
 
+  // LÓGICA PARA ROTAS DE CATEGORIAS COM ID
   const isRotaCategoriaComId =
     url.startsWith("/categorias/") && url.split("/").length === 3;
 
@@ -125,6 +173,7 @@ export const manipuladorDeRotas = (request, response) => {
       );
     }
 
+    // UPDATE (Atualizar uma categoria)
     if (method === "PUT") {
       const { nome, descricao } = body || {};
 
@@ -143,6 +192,7 @@ export const manipuladorDeRotas = (request, response) => {
       );
     }
 
+    // DELETE (Deletar uma categoria)
     if (method === "DELETE") {
       categorias.splice(indexCategoria, 1);
 
@@ -151,14 +201,17 @@ export const manipuladorDeRotas = (request, response) => {
     }
   }
 
+  // 5. READ (Listar todos os fornecedores)
   if (url === "/fornecedores" && method === "GET") {
     response.writeHead(200);
     return response.end(JSON.stringify(fornecedores));
   }
 
+  // 6. CREATE (Cadastrar um novo fornecedor)
   if (url === "/fornecedores" && method === "POST") {
     const { razaoSocial, cnpj, contato } = body || {};
 
+    // Verifica se o CNPJ possui 14 caracteres
     if (String(cnpj).length !== 14) {
       response.writeHead(400);
       return response.end(
@@ -184,6 +237,7 @@ export const manipuladorDeRotas = (request, response) => {
     );
   }
 
+  // LÓGICA PARA ROTAS DE FORNECEDORES COM ID
   const isRotaFornecedorComId =
     url.startsWith("/fornecedores/") && url.split("/").length === 3;
 
@@ -200,6 +254,7 @@ export const manipuladorDeRotas = (request, response) => {
       );
     }
 
+    // UPDATE (Atualizar um fornecedor)
     if (method === "PUT") {
       const { razaoSocial, cnpj, contato } = body || {};
 
@@ -228,6 +283,7 @@ export const manipuladorDeRotas = (request, response) => {
       );
     }
 
+    // DELETE (Deletar um fornecedor)
     if (method === "DELETE") {
       fornecedores.splice(indexFornecedor, 1);
 
@@ -236,14 +292,17 @@ export const manipuladorDeRotas = (request, response) => {
     }
   }
 
+  // 7. READ (Listar todos os produtos)
   if (url === "/produtos" && method === "GET") {
     response.writeHead(200);
     return response.end(JSON.stringify(produtos));
   }
 
+  // 8. CREATE (Cadastrar um novo produto)
   if (url === "/produtos" && method === "POST") {
     const { nome, preco, categoria } = body || {};
 
+    // Verifica se a categoria informada existe
     const categoriaExiste = categorias.some((item) => item.id === categoria);
 
     if (!categoriaExiste) {
@@ -271,6 +330,7 @@ export const manipuladorDeRotas = (request, response) => {
     );
   }
 
+  // LÓGICA PARA ROTAS DE PRODUTOS COM ID
   const isRotaProdutoComId =
     url.startsWith("/produtos/") && url.split("/").length === 3;
 
@@ -283,6 +343,7 @@ export const manipuladorDeRotas = (request, response) => {
       return response.end(JSON.stringify({ erro: "Produto não encontrado." }));
     }
 
+    // UPDATE (Atualizar um produto)
     if (method === "PUT") {
       const { nome, preco, categoria } = body || {};
 
@@ -302,6 +363,7 @@ export const manipuladorDeRotas = (request, response) => {
       );
     }
 
+    // DELETE (Deletar um produto)
     if (method === "DELETE") {
       produtos.splice(indexProduto, 1);
 
